@@ -1,0 +1,12 @@
+{
+  "$schema": "nc:prompt:1",
+  "name": "Novelcrafter/Codex (Copy)",
+  "type": "component",
+  "messages": [
+    {
+      "type": "system",
+      "format": "aic2",
+      "text": "{! Codex entries for the AI !}\n{#if codex.context}\nUse these notes on characters, places and things:\n<codex>\n{codex.context}\n</codex>\n{#endif}"
+    }
+  ]
+}

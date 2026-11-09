@@ -1,0 +1,317 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
+  --font-serif: "Literata", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+}
+
+:root {
+  --editor-font-size: 18px;
+  --editor-width: 720px;
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  @apply bg-stone-50 text-stone-800 antialiased dark:bg-stone-950 dark:text-stone-200;
+  font-family: var(--font-sans);
+}
+
+/* dezente Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(168 162 158 / 0.5) transparent;
+}
+
+/* ---------------------------------------------------------------- Texteditor */
+
+.prose-doc {
+  font-family: var(--font-serif);
+  font-size: var(--editor-font-size);
+  line-height: 1.75;
+  @apply text-stone-800 dark:text-stone-200;
+}
+.prose-doc:focus {
+  outline: none;
+}
+.prose-doc p {
+  margin: 0 0 0.85em;
+}
+.prose-doc h1,
+.prose-doc h2,
+.prose-doc h3 {
+  font-weight: 600;
+  margin: 1.2em 0 0.5em;
+  line-height: 1.3;
+}
+.prose-doc h1 {
+  font-size: 1.5em;
+}
+.prose-doc h2 {
+  font-size: 1.3em;
+}
+.prose-doc h3 {
+  font-size: 1.12em;
+}
+.prose-doc blockquote {
+  @apply border-l-4 border-stone-300 pl-4 italic dark:border-stone-700;
+}
+.prose-doc hr {
+  border: none;
+  text-align: center;
+  margin: 1.5em 0;
+}
+.prose-doc hr::after {
+  content: "* * *";
+  @apply text-stone-400;
+  letter-spacing: 0.5em;
+}
+.prose-doc ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.prose-doc ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.prose-doc p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  @apply text-stone-400 dark:text-stone-600;
+}
+
+/* Beat */
+.beat-node {
+  @apply my-4 rounded-lg border border-amber-300/80 bg-amber-50 font-sans text-[15px] leading-relaxed shadow-sm dark:border-amber-700/60 dark:bg-amber-950/30;
+}
+.beat-node .beat-content {
+  @apply px-3 py-2 text-stone-800 dark:text-amber-50;
+  min-height: 1.6em;
+}
+.beat-node .beat-content p {
+  margin: 0;
+}
+.beat-static {
+  @apply my-4 rounded-lg border border-amber-300/80 bg-amber-50 px-3 py-2 font-sans text-[15px] dark:border-amber-700/60 dark:bg-amber-950/30;
+}
+.beat-static-label {
+  @apply mr-2 rounded bg-amber-200 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-800 dark:text-amber-100;
+}
+
+/* Versteckte Notiz */
+.note-node,
+.note-static {
+  @apply my-3 rounded-md border border-dashed border-sky-300 bg-sky-50/70 px-3 py-2 font-sans text-[15px] text-sky-950 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100;
+}
+.note-node::before,
+.note-static::before {
+  content: "Notiz · nicht im Manuskript";
+  display: block;
+  @apply mb-1 text-[11px] font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-400;
+}
+
+/* Rahmen (Varianten, Zwischenstände) – gestrichelt = für die KI ausgeblendet */
+.frame-node,
+.frame-static {
+  @apply my-4 rounded-lg border border-violet-300 bg-violet-50/40 dark:border-violet-800 dark:bg-violet-950/20;
+}
+.frame-node.frame-excluded,
+.frame-static-excluded {
+  @apply border-dashed;
+}
+.frame-node .frame-head {
+  @apply border-b border-violet-200/80 dark:border-violet-800/60;
+}
+.frame-node.frame-collapsed .frame-head {
+  @apply border-b-0;
+}
+.frame-node .frame-content {
+  @apply px-4 py-1;
+}
+.frame-node.frame-excluded .frame-content,
+.frame-static-excluded > :not(.frame-static-title) {
+  @apply text-stone-600 dark:text-stone-400;
+}
+.frame-static {
+  @apply px-4 py-1;
+}
+.frame-static-title {
+  @apply -mx-4 mb-1 border-b border-violet-200/80 px-3 py-1 font-sans text-[13px] font-medium text-violet-900 dark:border-violet-800/60 dark:text-violet-100;
+}
+
+/* Kodex-Erwähnungen */
+.codex-mention {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  @apply decoration-amber-600/70 dark:decoration-amber-400/70;
+  cursor: help;
+}
+.hide-mentions .codex-mention {
+  text-decoration: none;
+  cursor: text;
+}
+
+/* Fokusmodus: nur aktueller Absatz klar */
+.focus-mode .prose-doc > p:not(.has-focus) {
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+.focus-mode .prose-doc > p.has-focus {
+  opacity: 1;
+}
+
+/* Statisches Manuskript */
+.static-scene {
+  cursor: text;
+}
+
+/* CodeMirror im Prompt-Editor */
+.cm-editor {
+  @apply h-full text-[13.5px];
+}
+.cm-editor .cm-scroller {
+  font-family: var(--font-mono);
+  line-height: 1.6;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}
+.tok-aic-comment {
+  @apply text-stone-400 italic dark:text-stone-500;
+}
+.tok-aic-block {
+  @apply font-semibold text-fuchsia-700 dark:text-fuchsia-400;
+}
+.tok-aic-brace {
+  @apply text-amber-700 dark:text-amber-400;
+}
+.tok-aic-fn {
+  @apply text-sky-700 dark:text-sky-400;
+}
+.tok-aic-str {
+  @apply text-emerald-700 dark:text-emerald-400;
+}
+.tok-aic-num {
+  @apply text-orange-700 dark:text-orange-400;
+}
+.tok-aic-kw {
+  @apply font-semibold text-fuchsia-700 dark:text-fuchsia-400;
+}
+.tok-aic-xml {
+  @apply text-stone-500 dark:text-stone-400;
+}
+
+.stream-cursor::after,
+.stream-caret::after {
+  content: "▍";
+  @apply ml-0.5 animate-pulse text-amber-600;
+}
+
+/* Markdown in Chat-Antworten (components/Markdown.tsx) */
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md :is(p, ul, ol, pre, blockquote, table) {
+  margin: 0.65em 0;
+}
+.md :is(h1, h2, h3, h4, h5, h6) {
+  @apply font-semibold;
+  margin: 1.1em 0 0.4em;
+  line-height: 1.3;
+}
+.md h1 {
+  font-size: 1.3em;
+}
+.md h2 {
+  font-size: 1.18em;
+}
+.md h3 {
+  font-size: 1.06em;
+}
+.md :is(h4, h5, h6) {
+  font-size: 1em;
+}
+.md ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.md ol {
+  list-style: decimal;
+  padding-left: 1.6em;
+}
+.md li {
+  margin: 0.25em 0;
+}
+.md li > :is(p, ul, ol) {
+  margin: 0.25em 0;
+}
+.md li::marker {
+  @apply text-stone-400;
+}
+.md strong {
+  @apply font-semibold;
+}
+.md a {
+  @apply text-amber-700 underline underline-offset-2 dark:text-amber-400;
+}
+.md code {
+  @apply rounded bg-stone-100 px-1 py-0.5 font-mono text-[0.9em] dark:bg-stone-800;
+}
+.md pre {
+  @apply overflow-x-auto rounded-lg bg-stone-100 p-3 text-[0.9em] dark:bg-stone-800;
+}
+.md pre code {
+  @apply bg-transparent p-0;
+}
+.md blockquote {
+  @apply border-l-2 border-stone-300 pl-3 text-stone-600 italic dark:border-stone-600 dark:text-stone-400;
+}
+.md hr {
+  @apply my-4 border-stone-200 dark:border-stone-700;
+}
+.md table {
+  @apply block overflow-x-auto border-collapse;
+}
+.md :is(th, td) {
+  @apply border border-stone-200 px-2 py-1 text-left align-top dark:border-stone-700;
+}
+.md th {
+  @apply bg-stone-50 font-semibold dark:bg-stone-800/50;
+}
+
+/* Platzhalter-Chips im Baustein-Editor */
+.nm-chip {
+  display: inline-block;
+  margin: 0 1px;
+  padding: 0 7px;
+  border-radius: 9999px;
+  border: 1px solid;
+  font-size: 12.5px;
+  line-height: 19px;
+  font-weight: 500;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.nm-chip-builtin { background: rgb(254 243 199); border-color: rgb(252 211 77); color: rgb(146 64 14); }
+.nm-chip-option { background: rgb(224 242 254); border-color: rgb(125 211 252); color: rgb(7 89 133); }
+.nm-chip-unknown { background: rgb(254 226 226); border-color: rgb(252 165 165); color: rgb(153 27 27); text-decoration: underline wavy; }
+.dark .nm-chip-builtin { background: rgb(120 53 15 / 0.45); border-color: rgb(180 83 9); color: rgb(253 230 138); }
+.dark .nm-chip-option { background: rgb(12 74 110 / 0.5); border-color: rgb(3 105 161); color: rgb(186 230 253); }
+.dark .nm-chip-unknown { background: rgb(127 29 29 / 0.5); border-color: rgb(185 28 28); color: rgb(254 202 202); }

@@ -1,0 +1,58 @@
+{
+  "$schema": "nc:prompt:1",
+  "type": "workshop-chat",
+  "name": "Beats from Summary",
+  "messages": [
+    {
+      "type": "system",
+      "text": "You help a novelist plan scenes. Turn the scene summary into a numbered list of beats that will later be used to write the prose.\n\nWrite exactly {input(\"amount\")} scene beats.\n\nGuidelines:\n- Name the characters in every beat instead of using pronouns.\n- One step of the action per beat, one or two sentences each.\n- No dialogue and no prose, only what happens.\n- Stay within the summary and do not continue the story beyond it.\n\n{#if input(\"Scene\")}\n  The scene to plan:\n  {input(\"Scene\")}\n{#endif}\n\n{! Novel info, codex and the author's instructions !}\n{include(\"Novelcrafter/Chat/DefaultContext\")}\n{include(\"Novelcrafter/Chat/DefaultInstructions\")}",
+      "format": "aic2"
+    }
+  ],
+  "inputs": [
+    {
+      "name": "Amount",
+      "description": "How many beats should be generated?",
+      "required": true,
+      "mode": "single",
+      "types": [
+        "dropdown",
+        "text"
+      ],
+      "hideInput": true,
+      "default": [
+        {
+          "type": "uiDropdown",
+          "id": "2"
+        }
+      ],
+      "settings": {
+        "dropdown": {
+          "options": [
+            "6",
+            "8",
+            "12"
+          ]
+        },
+        "text": {
+          "placeholder": "e.g. 10"
+        }
+      }
+    },
+    {
+      "name": "Scene",
+      "description": "The scene to plan the beats for.",
+      "required": true,
+      "mode": "single",
+      "types": [
+        "scene"
+      ],
+      "addToContext": true,
+      "settings": {
+        "scene": {
+          "mode": "summary"
+        }
+      }
+    }
+  ]
+}
