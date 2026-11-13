@@ -241,7 +241,7 @@ Un prompt Novelmaker se compose de quatre parties (rôle et style, blocs de cont
 
 **Bibliothèque → Importer** accepte Word (`.docx`), Markdown (`.md`), texte brut (`.txt`) ou un zip. Avant l’import, une fenêtre montre ce qui a été trouvé. Vous pouvez aussi y choisir une série existante ; le roman en devient alors le tome suivant.
 
-- **Par défaut, tout est de la prose.** Les titres divisent le texte en chapitres (deux niveaux de titre : acte + chapitre ; trois : acte / chapitre / scène). `* * *` ou une ligne horizontale commence une nouvelle scène. Dans les fichiers texte, des lignes comme « Chapter 2: Title », « Prologue » ou « Epilogue » deviennent des chapitres, et « Part 1 » devient un acte.
+- **Par défaut, tout est de la prose.** Les titres divisent le texte en chapitres (deux niveaux de titre : acte + chapitre ; trois : acte / chapitre / scène). `* * *` ou une ligne horizontale commence une nouvelle scène. Dans Word, vos propres styles comptent aussi comme titres s’ils ont un niveau hiérarchique (Paragraphe → Niveau hiérarchique). Dans les fichiers texte, et dans les documents Word sans aucun titre (par exemple, titres de chapitre simplement en grand et en gras), des lignes isolées comme « Chapitre 2 : Titre », « Prologue » ou « Épilogue » deviennent des chapitres, et « Partie 1 » devient un acte. Cela fonctionne dans toutes les langues de l’application : « Chapter 3 », « Kapitel 3 », « Capítulo 3 », « Capitolo 3 » ou « Розділ 3 » sont aussi reconnus.
 - **Structure du zip :**
 
   ```

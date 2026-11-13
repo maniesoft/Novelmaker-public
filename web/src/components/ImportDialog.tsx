@@ -32,6 +32,13 @@ const TYPE_PLURAL: Record<string, [string, string]> = {
 // Ordnernamen erkennt der Import auf Deutsch und Englisch (Kontext/Context, Figuren/Characters, …).
 const SIMPLE_ZIP_LAYOUT = N_(`Novel.zip\n  Manuscript.docx   or .md / .txt – multiple files = one chapter each\n  Context/          one codex entry per file\n    Characters/     subfolders set the type:\n    Locations/      Characters, Locations, Objects, Lore, Subplots\n    World.md        no subfolder: “Other”\n  Snippets/         one snippet per file`);
 
+// Manuskript ohne Überschriften: so lassen sich Kapitel markieren (erkannte Zeilen siehe TXT_CHAPTER_LINE im Server).
+const NO_HEADINGS_HINT: Record<NonNullable<ImportPreview['missingHeadings']>, string> = {
+  docx: N_('No chapter headings found, so the whole text becomes one chapter. In Word, format chapter titles as headings (e.g. with the “Heading 1” style) or put each on a line of its own, such as “Chapter 1” or “Chapter 2: Title”.'),
+  markdown: N_('No chapter headings found, so the whole text becomes one chapter. Mark chapter titles as headings, e.g. <code># Chapter 1</code>.'),
+  text: N_('No chapter headings found, so the whole text becomes one chapter. Put each chapter title on a line of its own, such as “Chapter 1” or “Chapter 2: Title”.'),
+};
+
 export function ImportDialog({ file, onClose }: { file: File; onClose: () => void }) {
   const navigate = useNavigate();
   const { data: seriesList } = useSeriesList();
@@ -205,6 +212,9 @@ export function ImportDialog({ file, onClose }: { file: File; onClose: () => voi
               <p className="mt-0.5 text-xs text-stone-500">
                 {tr('Everything becomes prose. Headings divide it into chapters (or acts and scenes); <code>* * *</code> and horizontal lines start a new scene.')}
               </p>
+            )}
+            {!nc && preview.missingHeadings && (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-500">{tr(NO_HEADINGS_HINT[preview.missingHeadings])}</p>
             )}
             {isZip && !nc && !preview.files && (
               <p className="mt-0.5 text-xs text-stone-500">{t('No manuscript file found — an empty novel will be created.')}</p>

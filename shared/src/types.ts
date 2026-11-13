@@ -241,6 +241,8 @@ export interface ImportPreview {
   snippets: number;
   chats: number;
   warnings: string[];
+  /** Format des (einzigen) Manuskripts, wenn es gar keine Überschriften enthält – alles landet in einem Kapitel. */
+  missingHeadings: 'docx' | 'markdown' | 'text' | null;
 }
 
 export interface ImportResult {

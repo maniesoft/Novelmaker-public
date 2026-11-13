@@ -241,7 +241,7 @@ Ein Novelmaker-Prompt besteht aus vier Teilen (Rolle & Stil, Kontext-Bausteine, 
 
 **Bibliothek → Importieren** nimmt Word (`.docx`), Markdown (`.md`), Text (`.txt`) oder ein Zip. Vor dem Import zeigt ein Dialog, was gefunden wurde. Dort lässt sich auch eine bestehende Serie wählen; der Roman wird dann ihr nächster Band.
 
-- **Standard: alles ist Prosa.** Überschriften gliedern in Kapitel (zwei Ebenen: Akt + Kapitel, drei: Akt / Kapitel / Szene). `* * *` oder eine waagerechte Linie beginnt eine neue Szene. In Textdateien werden Zeilen wie „Kapitel 2: Titel“, „Prolog“, „Epilog“ zu Kapiteln und „Teil 1“ zu Akten.
+- **Standard: alles ist Prosa.** Überschriften gliedern in Kapitel (zwei Ebenen: Akt + Kapitel, drei: Akt / Kapitel / Szene). `* * *` oder eine waagerechte Linie beginnt eine neue Szene. In Word zählen auch eigene Formatvorlagen als Überschrift, wenn sie eine Gliederungsebene haben (Absatz → Gliederungsebene). In Textdateien und in Word-Dokumenten ganz ohne Überschriften (z. B. Kapiteltitel nur groß und fett gesetzt) werden allein stehende Zeilen wie „Kapitel 2: Titel“, „Prolog“, „Epilog“ zu Kapiteln und „Teil 1“ zu Akten. Das klappt in allen Sprachen der App, also auch mit „Chapter 3“, „Chapitre 3“, „Capítulo 3“, „Capitolo 3“ oder „Розділ 3“.
 - **Zip-Aufbau:**
 
   ```

@@ -92,6 +92,8 @@ interface DocBlock {
   listItem: boolean;
   html: string;
   plain: string;
+  /** Eintrag eines Word-Inhaltsverzeichnisses */
+  toc?: boolean;
 }
 
 interface DocContent {
@@ -109,26 +111,122 @@ function xmlText(xml: string, tag: string): string {
   return m ? decodeEntities(m[1]).trim() : '';
 }
 
+// Eigene Formatvorlagen mit Gliederungsebene (z. B. „Kapiteltitel“) und Absätze mit direkt eingestellter
+// Gliederungsebene kennt mammoth nicht als Überschrift, Verzeichnis-Einträge nicht als solche. Diese Absätze
+// bekommen vor dem Umwandeln eine dieser Formatvorlagen, die die Style-Map auf h1–h6 bzw. p.nm-toc abbildet.
+const OUTLINE_STYLE = 'NMOutline';
+const TOC_STYLE = 'NMToc';
+const DOCX_STYLE_MAP = [
+  "p[style-name='Title'] => h1.nm-title:fresh",
+  "p[style-name='Titel'] => h1.nm-title:fresh",
+  ...[1, 2, 3, 4, 5, 6].map((l) => `p.${OUTLINE_STYLE}${l} => h${l}:fresh`),
+  `p.${TOC_STYLE} => p.nm-toc:fresh`,
+];
+
+interface DocxStyles {
+  /** Style-ID → Name und Gliederungsebene (0 = Ebene 1 … 8, 9 = Textkörper; über basedOn geerbt) */
+  byId: Map<string, { name: string; outline: number | null }>;
+  /** Formatvorlage für Absätze ohne eigene (meist „Normal“) */
+  defaultId: string;
+}
+
+function readDocxStyles(xml: string): DocxStyles {
+  const raw = new Map<string, { name: string; basedOn: string; outline: number | null }>();
+  let defaultId = '';
+  for (const m of xml.matchAll(/<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g)) {
+    const attr = (name: string) => new RegExp(`\\bw:${name}="([^"]*)"`).exec(m[1])?.[1] ?? '';
+    if (m[1].endsWith('/') || attr('type') !== 'paragraph') continue;
+    const val = (tag: string) => new RegExp(`<w:${tag}\\b[^>]*\\bw:val="([^"]*)"`).exec(m[2])?.[1];
+    const id = attr('styleId');
+    const outline = val('outlineLvl');
+    raw.set(id, { name: decodeEntities(val('name') ?? id), basedOn: val('basedOn') ?? '', outline: outline == null ? null : Number(outline) });
+    if (/^(1|true|on)$/i.test(attr('default'))) defaultId = id;
+  }
+  const outlineOf = (id: string, seen: Set<string>): number | null => {
+    const s = raw.get(id);
+    if (!s || seen.has(id)) return null;
+    seen.add(id);
+    return s.outline ?? (s.basedOn ? outlineOf(s.basedOn, seen) : null);
+  };
+  const byId = new Map([...raw].map(([id, s]) => [id, { name: s.name, outline: outlineOf(id, new Set()) }] as const));
+  return { byId, defaultId };
+}
+
+/** Teilt einen Absatz (<w:p>…</w:p>) in Start-Tag, eigene Absatzeigenschaften (ohne frühere Fassung aus der
+ *  Änderungsverfolgung) und den Rest. */
+function splitParagraph(p: string): { open: string; pPr: string | null; rest: string } {
+  const open = /^<w:p\b[^>]*>\s*/.exec(p)?.[0] ?? '';
+  const rest = p.slice(open.length);
+  if (/^<w:pPr\s*\/>/.test(rest)) return { open, pPr: '', rest };
+  const m = /^<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(rest);
+  return { open, pPr: m ? m[1].split('<w:pPrChange')[0] : null, rest };
+}
+
+function setParagraphStyle(p: string, styleId: string): string {
+  const tag = `<w:pStyle w:val="${styleId}"/>`;
+  const { open, pPr, rest } = splitParagraph(p);
+  if (pPr == null) return `${open}<w:pPr>${tag}</w:pPr>${rest}`;
+  if (/^<w:pPr\s*\/>/.test(rest)) return open + rest.replace(/^<w:pPr\s*\/>/, `<w:pPr>${tag}</w:pPr>`);
+  // pStyle steht immer als erstes in den Absatzeigenschaften
+  if (/<w:pStyle\b/.test(pPr)) return open + rest.replace(/<w:pStyle\b[^>]*\/>/, tag);
+  return open + rest.replace(/^<w:pPr>/, `<w:pPr>${tag}`);
+}
+
+/** Formatvorlage, die mammoth für diesen Absatz sehen soll – oder null, wenn er bleibt, wie er ist. */
+function docxParagraphStyle(p: string, styles: DocxStyles): string | null {
+  const { pPr } = splitParagraph(p);
+  const styleId = (pPr && /<w:pStyle\b[^>]*\bw:val="([^"]*)"/.exec(pPr)?.[1]) || styles.defaultId;
+  const style = styles.byId.get(styleId);
+  const name = (style?.name ?? '').trim().toLowerCase();
+  if (/^toc \d$/.test(name)) return TOC_STYLE;
+  // Überschrift 1–6 und Titel bildet mammoth bzw. die Style-Map schon ab
+  if (/^(heading [1-6]|title|titel)$/.test(name)) return null;
+  const direct = pPr ? /<w:outlineLvl\b[^>]*\bw:val="(\d+)"/.exec(pPr)?.[1] : undefined;
+  const level = direct != null ? Number(direct) : (style?.outline ?? null);
+  return level != null && level >= 0 && level <= 5 ? `${OUTLINE_STYLE}${level + 1}` : null;
+}
+
+/**
+ * Word-Dokumente ganz ohne Überschriften: allein stehende Zeilen wie „Chapter 28: April Third“ oder „Teil 2“
+ * gliedern wie in Text-Dateien (oft sind Kapiteltitel nur von Hand groß und fett gesetzt). Eine solche Zeile zählt
+ * nur, wenn Text folgt, bevor die nächste gleichrangige oder höhere kommt – sonst ist sie Teil eines Inhaltsverzeichnisses.
+ */
+function chapterLinesAsHeadings(blocks: DocBlock[]): DocBlock[] {
+  if (blocks.some((b) => b.kind === 'heading')) return blocks;
+  const levels = blocks.map((b) => (b.kind === 'para' && !b.listItem && !b.toc ? txtHeadingLevel(b.plain) : 0));
+  return blocks.map((b, i) => {
+    const level = levels[i];
+    if (!level) return b;
+    for (let j = i + 1; j < blocks.length; j++) {
+      if (levels[j]) {
+        if (levels[j] <= level) return b;
+        continue;
+      }
+      if (blocks[j].kind === 'para' && blocks[j].plain && !blocks[j].toc) return { ...b, kind: 'heading', level };
+    }
+    return b;
+  });
+}
+
 async function readDocx(zip: JSZip): Promise<DocContent> {
   const docFile = zip.file('word/document.xml');
   if (!docFile) throw new HttpError(400, t('This isn’t a valid docx file (word/document.xml is missing).'));
   let xml = await docFile.async('string');
+  const styles = readDocxStyles((await zip.file('word/styles.xml')?.async('string')) ?? '');
   // Leere Absätze mit Unterrand (waagerechte Linie; bei Novelcrafter die Grenze zwischen Zusammenfassung und Prosa)
   // lässt mammoth fallen – vorher durch einen Marker ersetzen.
   let separatorLines = 0;
-  xml = xml.replace(/<w:p(?:\s[^>]*)?>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, (p) => {
+  xml = xml.replace(/<w:p(?:\s[^>]*)?(?<!\/)>(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, (p) => {
     if (/<w:pBdr>(?:(?!<\/w:pBdr>)[\s\S])*?<w:bottom\b/.test(p) && !/<w:t[\s>]/.test(p)) {
       separatorLines++;
       return `<w:p><w:r><w:t>${SEP_MARK}</w:t></w:r></w:p>`;
     }
-    return p;
+    const style = docxParagraphStyle(p, styles);
+    return style ? setParagraphStyle(p, style) : p;
   });
   zip.file('word/document.xml', xml);
   const buffer = await zip.generateAsync({ type: 'nodebuffer' });
-  const { value: html, messages } = await mammoth.convertToHtml(
-    { buffer },
-    { styleMap: ["p[style-name='Title'] => h1.nm-title:fresh", "p[style-name='Titel'] => h1.nm-title:fresh"] },
-  );
+  const { value: html, messages } = await mammoth.convertToHtml({ buffer }, { styleMap: DOCX_STYLE_MAP });
   const warnings = [...new Set(messages.filter((x) => x.type === 'warning').map((x) => x.message))];
 
   const core = (await zip.file('docProps/core.xml')?.async('string')) ?? '';
@@ -149,10 +247,17 @@ async function readDocx(zip: JSZip): Promise<DocContent> {
     else if (plain === SEP_MARK || (!level && UNDERSCORE_LINE.test(plain))) kind = 'sep';
     else if (!level && SCENE_BREAK.test(plain)) kind = 'break';
     if (kind === 'para' && !plain && !/<br/i.test(inner)) continue;
-    blocks.push({ kind, level, listItem: tag === 'li', html: inner, plain: kind === 'sep' ? '' : plain });
+    // Word-Verzeichnisse: Formatvorlage „Verzeichnis 1…9“ oder Links auf die Textmarken der Überschriften
+    const toc = /class="[^"]*nm-toc/.test(m[2]) || /href="#_Toc/i.test(inner);
+    blocks.push({ kind, level, listItem: tag === 'li', html: inner, plain: kind === 'sep' ? '' : plain, ...(toc ? { toc } : {}) });
   }
   const docTitle = blocks.find((b) => b.kind === 'title')?.plain ?? '';
-  return { blocks, title: docTitle || metaTitle, author, separatorLines, warnings };
+  return { blocks: chapterLinesAsHeadings(blocks), title: docTitle || metaTitle, author, separatorLines, warnings };
+}
+
+/** Manuskript ohne jede Überschrift: alles landet in einem Kapitel (Hinweis im Import-Dialog). */
+function lacksHeadings(doc: DocContent): boolean {
+  return !doc.blocks.some((b) => b.kind === 'heading') && doc.blocks.some((b) => b.kind === 'para' && b.plain);
 }
 
 /** Sieht ein docx wie ein Novelcrafter-Export aus? (Linien unter Zusammenfassungen oder Titel + "Act/Chapter/Scene N") */
@@ -195,9 +300,25 @@ export function mdInlineToHtml(src: string): string {
 
 const MD_HEADING = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const MD_LIST = /^\s*(?:[-*+]|\d+[.)])\s+/;
+// Gliederungswörter in allen Sprachen der App (de, en, fr, es, it, uk). So beschriftet auch Novelmakers eigener
+// Export Akte, Kapitel und Szenen ohne Titel („Kapitel 3“, „Chapitre 3“, „Розділ 3“ …).
+const ACT_WORD = '(?:akt|act|acte|acto|atto|акт|teil|part|partie|parte|частина|buch|book|livre|libro|книга)';
+const CHAPTER_WORD = '(?:kapitel|chapter|chapitre|cap[ií]tulo|capitolo|розділ|глава)';
+const SCENE_WORD = '(?:szene|sc[eè]ne|escena|scena|сцена)';
+/** Kapitel ohne Nummer: Prolog, Epilog, Vor- und Nachwort */
+const FRAME_WORD =
+  '(?:prolog|prologue|pr[oó]logo|пролог|epilog|[eé]pilogue|ep[ií]logo|епілог|vorwort|nachwort|foreword|afterword|pr[eé]face|avant-propos|postface|prefacio|prefazione|postfazione|передмова|післямова)';
+/** Nummer als Ziffer, römisch oder ausgeschrieben: 3, XII, drei, premier, перший */
+const HEADING_NO = '(?:\\d+|\\p{L}+)';
+const HEADING_REST = '(?:\\s*[:.\\-–—]\\s*.*)?$';
 /** Einzeln stehende Zeilen wie "Teil 2" (Akt) bzw. "Kapitel 3: Titel", "Prolog" (Kapitel) in Text-Dateien. */
-const TXT_ACT_LINE = /^(?:teil|part|akt|act|buch|book)\s+(?:\d+|[ivxlcdm]+|[a-zäöüß]+)\.?(?:\s*[:.\-–—]\s*.*)?$/i;
-const TXT_CHAPTER_LINE = /^(?:(?:kapitel|chapter)\s+(?:\d+|[ivxlcdm]+|[a-zäöüß]+)\.?|prolog|prologue|epilog|epilogue|vorwort|nachwort)(?:\s*[:.\-–—]\s*.*)?$/i;
+const TXT_ACT_LINE = new RegExp(`^${ACT_WORD}\\s+${HEADING_NO}\\.?${HEADING_REST}`, 'iu');
+const TXT_CHAPTER_LINE = new RegExp(`^(?:${CHAPTER_WORD}\\s+${HEADING_NO}\\.?|${FRAME_WORD})${HEADING_REST}`, 'iu');
+/** Überschriften, die nur eine Nummer sind ("Act 1", "Chapitre 3 : Titre") */
+const NUMBERED_HEADING = new RegExp(`^(?:${ACT_WORD}|${CHAPTER_WORD}|${SCENE_WORD})\\s+\\d+\\s*(?:[:.\\-–—]\\s*(.*))?$`, 'iu');
+const NUMBERED_ACT = new RegExp(`^${ACT_WORD}\\s+\\d+`, 'iu');
+const NUMBERED_CHAPTER = new RegExp(`^${CHAPTER_WORD}\\s+\\d+`, 'iu');
+const NUMBERED_SCENE = new RegExp(`^${SCENE_WORD}\\s+\\d+`, 'iu');
 
 function txtHeadingLevel(line: string): number {
   const t = line.trim();
@@ -313,10 +434,10 @@ interface StructureConfig {
 const structureConfig = (format: ImportFormat, opts: ImportOptions): StructureConfig =>
   format === 'simple' ? { simple: true } : { simple: false, separator: opts.separator, unseparated: opts.unseparated };
 
-/** "Act 1", "Chapter 3", "Szene 2" sind nur Nummern – der eigentliche Titel bleibt leer bzw. steht nach dem Doppelpunkt. */
+/** "Act 1", "Chapitre 3", "Szene 2" sind nur Nummern – der eigentliche Titel bleibt leer bzw. steht nach dem Doppelpunkt. */
 export function cleanHeading(s: string): string {
   const t = s.trim();
-  const m = /^(?:act|akt|part|teil|chapter|kapitel|scene|szene)\s+\d+\s*(?:[:.\-–—]\s*(.*))?$/i.exec(t);
+  const m = NUMBERED_HEADING.exec(t);
   return m ? (m[1] ?? '').trim() : t;
 }
 
@@ -343,7 +464,7 @@ function structure(blocks: DocBlock[], cfg: StructureConfig): ParsedAct[] {
     const upper = at(levels[0]);
     const lower = at(levels[1]);
     const chapterScene =
-      !upper.some((t) => /^(akt|act|teil|part)\s+\d+/i.test(t)) && (lower.some((t) => /^(szene|scene)\s+\d+/i.test(t)) || upper.some((t) => /^(kapitel|chapter)\s+\d+/i.test(t)));
+      !upper.some((t) => NUMBERED_ACT.test(t)) && (lower.some((t) => NUMBERED_SCENE.test(t)) || upper.some((t) => NUMBERED_CHAPTER.test(t)));
     if (chapterScene) [chapterLevel, sceneLevel] = levels;
     else [actLevel, chapterLevel] = levels;
   } else if (levels.length === 1) chapterLevel = levels[0];
@@ -628,10 +749,13 @@ const dirName = (p: string) => p.slice(0, p.lastIndexOf('/') + 1);
 const withoutExt = (name: string) => name.replace(/\.[^.]+$/, '');
 const naturalCompare = (a: string, b: string) => a.localeCompare(b, 'de', { numeric: true, sensitivity: 'base' });
 
+/** Nummer am Anfang eines Dateinamens, auch mit Gliederungswort: "01 - ", "Kapitel 3_", "Chapitre 12 - " */
+const FILE_NUMBER = new RegExp(`^\\s*(?:(?:${CHAPTER_WORD}|${ACT_WORD})[\\s_-]*)?\\d+(?:\\.\\d+)*\\s*[-_.:)–—]*\\s*`, 'iu');
+
 /** Kapiteltitel aus einem Dateinamen: "01 - Der Anfang.md" → "Der Anfang". */
 function fileTitle(path: string): string {
   return withoutExt(baseName(path))
-    .replace(/^\s*(?:(?:kapitel|chapter|teil|part)[\s_-]*)?\d+(?:\.\d+)*\s*[-_.:)–—]*\s*/i, '')
+    .replace(FILE_NUMBER, '')
     .replace(/_/g, ' ')
     .trim();
 }
@@ -897,6 +1021,7 @@ interface ParsedImport {
   separatorLines: number;
   warnings: string[];
   files: number;
+  missingHeadings: ImportPreview['missingHeadings'];
   codex: ImportCodex[];
   snippets: ImportSnippet[];
   chats: ImportChat[];
@@ -956,6 +1081,7 @@ async function parseImport(data: Buffer, filename: string, opts: ImportOptions):
       separatorLines: 0,
       warnings: [],
       files: 1,
+      missingHeadings: lacksHeadings(doc) ? kind : null,
       ...emptyExtras,
     };
   }
@@ -978,6 +1104,7 @@ async function parseImport(data: Buffer, filename: string, opts: ImportOptions):
       separatorLines: doc.separatorLines,
       warnings: doc.warnings,
       files: 1,
+      missingHeadings: lacksHeadings(doc) ? 'docx' : null,
       ...emptyExtras,
     };
   }
@@ -1011,6 +1138,7 @@ async function parseNovelcrafterZip(zip: JSZip, filename: string, opts: ImportOp
     separatorLines: doc.separatorLines,
     warnings: doc.warnings,
     files: 1,
+    missingHeadings: lacksHeadings(doc) ? 'docx' : null,
     codex,
     snippets,
     chats,
@@ -1043,6 +1171,7 @@ async function parseSimpleZip(zip: JSZip, filename: string, detected: ImportForm
   let title = '';
   let author = '';
   let separatorLines = 0;
+  let missingHeadings: ImportPreview['missingHeadings'] = null;
   for (const e of prose) {
     let c: DocContent;
     try {
@@ -1057,6 +1186,7 @@ async function parseSimpleZip(zip: JSZip, filename: string, detected: ImportForm
     if (prose.length === 1) {
       title = c.title;
       author = c.author;
+      if (lacksHeadings(c)) missingHeadings = /\.docx$/i.test(e.rel) ? 'docx' : /\.txt$/i.test(e.rel) ? 'text' : 'markdown';
     }
   }
   const acts = parts.length === 1 ? parts[0].acts : mergeFiles(parts);
@@ -1071,6 +1201,7 @@ async function parseSimpleZip(zip: JSZip, filename: string, detected: ImportForm
     separatorLines,
     warnings: [...new Set(warnings)],
     files: prose.length,
+    missingHeadings,
     codex,
     snippets,
     chats: [],
@@ -1102,6 +1233,7 @@ function previewOf(p: ParsedImport): ImportPreview {
     snippets: p.snippets.length,
     chats: p.chats.length,
     warnings: p.warnings,
+    missingHeadings: p.missingHeadings,
   };
 }
 

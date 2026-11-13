@@ -241,7 +241,7 @@ Un prompt de Novelmaker consta de cuatro partes (rol y estilo, bloques de contex
 
 **Biblioteca → Importar** acepta Word (`.docx`), Markdown (`.md`), texto plano (`.txt`) o un zip. Antes de importar, un diálogo muestra lo que se ha encontrado. Ahí también puedes elegir una serie existente; la novela pasa entonces a ser su siguiente volumen.
 
-- **Por defecto, todo es prosa.** Los títulos dividen el texto en capítulos (dos niveles de título: acto + capítulo; tres: acto / capítulo / escena). `* * *` o una línea horizontal empieza una escena nueva. En los archivos de texto, las líneas como «Chapter 2: Title», «Prologue» o «Epilogue» se convierten en capítulos y «Part 1» en un acto.
+- **Por defecto, todo es prosa.** Los títulos dividen el texto en capítulos (dos niveles de título: acto + capítulo; tres: acto / capítulo / escena). `* * *` o una línea horizontal empieza una escena nueva. En Word, los estilos propios también cuentan como títulos si tienen un nivel de esquema (Párrafo → Nivel de esquema). En los archivos de texto, y en los documentos de Word sin ningún título (por ejemplo, con los títulos de capítulo solo en letra grande y negrita), las líneas sueltas como «Capítulo 2: Título», «Prólogo» o «Epílogo» se convierten en capítulos y «Parte 1» en un acto. Funciona en todos los idiomas de la aplicación, así que también se reconocen «Chapter 3», «Kapitel 3», «Chapitre 3», «Capitolo 3» o «Розділ 3».
 - **Estructura del zip:**
 
   ```

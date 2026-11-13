@@ -241,7 +241,7 @@ A Novelmaker prompt consists of four parts (role & style, context blocks, task, 
 
 **Library → Import** accepts Word (`.docx`), Markdown (`.md`), plain text (`.txt`) or a zip. Before importing, a dialog shows what was found. There you can also choose an existing series; the novel then becomes its next volume.
 
-- **By default everything is prose.** Headings divide the text into chapters (two heading levels: act + chapter; three: act / chapter / scene). `* * *` or a horizontal rule starts a new scene. In text files, lines like "Chapter 2: Title", "Prologue" or "Epilogue" become chapters and "Part 1" becomes an act.
+- **By default everything is prose.** Headings divide the text into chapters (two heading levels: act + chapter; three: act / chapter / scene). `* * *` or a horizontal rule starts a new scene. In Word, your own paragraph styles count as headings too if they have an outline level (Paragraph → Outline level). In text files, and in Word documents without any headings (chapter titles just set large and bold, for example), lines of their own like "Chapter 2: Title", "Prologue" or "Epilogue" become chapters and "Part 1" becomes an act. This works in all app languages, so "Kapitel 3", "Chapitre 3", "Capítulo 3", "Capitolo 3" or "Розділ 3" are recognized too.
 - **Zip layout:**
 
   ```

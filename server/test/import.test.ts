@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import JSZip from 'jszip';
-import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
+import { AlignmentType, BorderStyle, Document, HeadingLevel, InternalHyperlink, Packer, Paragraph, TextRun } from 'docx';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { ImportOptions, ImportPreview, ImportResult, Outline, Scene } from '@novelmaker/shared';
@@ -129,6 +129,12 @@ describe('Hilfsfunktionen', () => {
     expect(cleanHeading('Chapter 3')).toBe('');
     expect(cleanHeading('Kapitel 2: Der Streit')).toBe('Der Streit');
     expect(cleanHeading('Ein Anfang')).toBe('Ein Anfang');
+    // alle Sprachen der App (so beschriftet auch der Export)
+    expect(cleanHeading('Chapitre 3\u00a0: Titre')).toBe('Titre');
+    expect(cleanHeading('Capítulo 2')).toBe('');
+    expect(cleanHeading('Scène 1')).toBe('');
+    expect(cleanHeading('Розділ 4: Назва')).toBe('Назва');
+    expect(cleanHeading('Partie remise')).toBe('Partie remise');
     expect(looksLikeSummary([{ plain: LONG_SUMMARY }])).toBe(true);
     expect(looksLikeSummary([{ plain: '»Hallo«' }, { plain: '»Wer da?«' }, { plain: 'Sie ging.' }])).toBe(false);
   });
@@ -283,6 +289,92 @@ describe('Einfacher Import', () => {
     expect((await api<Scene>('GET', `/api/scenes/${c.id}`)).text).toContain('Carla kommt nach der Schicht');
   });
 
+  it('docx ohne Überschriften: von Hand formatierte Zeilen wie „Chapter 28: April Third“ gliedern, Verzeichnisse nicht', async () => {
+    const big = (text: string) => new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text, bold: true, size: 36 })] });
+    const doc = new Document({
+      styles: { paragraphStyles: [{ id: 'TOC1', name: 'toc 1', basedOn: 'Normal' }] },
+      sections: [
+        {
+          children: [
+            p('Contents'),
+            // Word-Verzeichnis (Formatvorlage „Verzeichnis 1“, Links auf die Überschriften) …
+            new Paragraph({ style: 'TOC1', children: [new InternalHyperlink({ anchor: '_Toc1', children: [new TextRun('Chapter 27: March Thirtieth\t1')] })] }),
+            new Paragraph({ style: 'TOC1', children: [new TextRun('Chapter 28: April Third\t5')] }),
+            // … und von Hand geschriebenes: ohne Text dahinter keine Kapitel
+            p('Chapter 29: Departure'),
+            big('Part 1'),
+            big('Chapter 27: March Thirtieth'),
+            p('It rained all day.'),
+            p('* * *'),
+            p('She waited by the window.'),
+            big('Chapter 28: April Third'),
+            p('The letter arrived in the morning.'),
+            big('Chapter 29: Departure'),
+            p('They left before dawn.'),
+          ],
+        },
+      ],
+    });
+    const data = (await Packer.toBuffer(doc)).toString('base64');
+    const pv = await api<ImportPreview>('POST', '/api/import/analyze', { filename: 'x.docx', data });
+    expect(pv).toMatchObject({ kind: 'docx', detected: 'simple', acts: 2, chapters: 4, scenes: 5, missingHeadings: null });
+    const r = await api<ImportResult>('POST', '/api/import', { filename: 'x.docx', data });
+    const o = await api<Outline>('GET', `/api/novels/${r.novelId}/outline`);
+    const [front, part1] = o.acts;
+    expect(front.chapters).toHaveLength(1);
+    expect((await api<Scene>('GET', `/api/scenes/${front.chapters[0].scenes[0].id}`)).text).toContain('Chapter 29: Departure');
+    expect(part1.chapters.map((c) => c.title)).toEqual(['March Thirtieth', 'April Third', 'Departure']);
+    expect(part1.chapters.map((c) => c.scenes.length)).toEqual([2, 1, 1]);
+    expect((await api<Scene>('GET', `/api/scenes/${part1.chapters[1].scenes[0].id}`)).text).toBe('The letter arrived in the morning.');
+  });
+
+  it('docx: eigene Formatvorlagen und Absätze mit Gliederungsebene sind Überschriften', async () => {
+    const doc = new Document({
+      styles: {
+        paragraphStyles: [
+          { id: 'ChapterBase', name: 'Chapter Base', basedOn: 'Normal', paragraph: { outlineLevel: 0 } },
+          { id: 'ChapterTitle', name: 'Chapter Title', basedOn: 'ChapterBase', run: { bold: true, size: 32 } },
+          // erbt die Formatierung, setzt die Ebene aber auf Textkörper zurück (wie Words „Inhaltsverzeichnisüberschrift“)
+          { id: 'Unlisted', name: 'Unlisted', basedOn: 'ChapterBase', paragraph: { outlineLevel: 9 } },
+        ],
+      },
+      sections: [
+        {
+          children: [
+            new Paragraph({ style: 'Unlisted', text: 'Foreword' }),
+            p('Before it all.'),
+            new Paragraph({ style: 'ChapterTitle', text: 'Chapter 1: Arrival' }),
+            p('Text one.'),
+            new Paragraph({ text: 'Interlude', outlineLevel: 0 }),
+            p('Text two.'),
+            new Paragraph({ style: 'ChapterTitle', text: 'The End' }),
+            p('Text three.'),
+          ],
+        },
+      ],
+    });
+    const data = (await Packer.toBuffer(doc)).toString('base64');
+    const r = await api<ImportResult>('POST', '/api/import', { filename: 'x.docx', data });
+    const o = await api<Outline>('GET', `/api/novels/${r.novelId}/outline`);
+    expect(o.acts).toHaveLength(1);
+    expect(o.acts[0].chapters.map((c) => c.title)).toEqual(['', 'Arrival', 'Interlude', 'The End']);
+    expect((await api<Scene>('GET', `/api/scenes/${o.acts[0].chapters[0].scenes[0].id}`)).text).toContain('Foreword');
+  });
+
+  it('Hinweis, wenn ein Manuskript gar keine Überschriften hat', async () => {
+    const analyze = (filename: string, data: Buffer) => api<ImportPreview>('POST', '/api/import/analyze', { filename, data: data.toString('base64') });
+    const plain = await Packer.toBuffer(new Document({ sections: [{ children: [p('Es war einmal.'), p('Ende.')] }] }));
+    expect(await analyze('x.docx', plain)).toMatchObject({ chapters: 1, missingHeadings: 'docx' });
+    expect(await analyze('x.docx', await ncDocx())).toMatchObject({ missingHeadings: null });
+    expect(await analyze('x.md', Buffer.from('Es war einmal.\n\nEnde.\n'))).toMatchObject({ missingHeadings: 'markdown' });
+    expect(await analyze('x.txt', Buffer.from('Es war einmal.\n\nEnde.\n'))).toMatchObject({ missingHeadings: 'text' });
+    expect(await analyze('x.txt', Buffer.from('Kapitel 1\n\nEs war einmal.\n'))).toMatchObject({ missingHeadings: null });
+    const zip = new JSZip();
+    zip.file('Roman/Manuskript.docx', plain);
+    zip.file('Roman/Kontext/Anna.md', 'Hauptfigur.');
+    expect(await analyze('x.zip', await zip.generateAsync({ type: 'nodebuffer' }))).toMatchObject({ kind: 'zip', missingHeadings: 'docx' });
+  });
+
   it('Markdown-Datei mit Frontmatter, Kapiteln, Szenentrenner und Hervorhebungen', async () => {
     const md =
       '---\ntitle: Mein Roman\nauthor: Anna Autorin\n---\n# Kapitel 1: Aufbruch\n\nEs war **sehr** kalt und *still*.\nZweite Zeile desselben Absatzes.\n\n»Los«, sagte sie.\n\n* * *\n\nAm nächsten Morgen.\n\n# Kapitel 2\n\nEnde_mit_unterstrich bleibt.\n';
@@ -300,6 +392,27 @@ describe('Einfacher Import', () => {
     expect(JSON.stringify(s1.content)).toContain('"bold"');
     expect(JSON.stringify(s1.content)).toContain('"italic"');
     expect((await api<Scene>('GET', `/api/scenes/${ch2.scenes[0].id}`)).text).toBe('Ende_mit_unterstrich bleibt.');
+  });
+
+  it('Kapitel- und Teil-Zeilen in allen Sprachen der App', () => {
+    const levels = (lines: string[]) => readTextContent(lines.join('\n\n'), 'text').blocks.map((b) => (b.kind === 'heading' ? b.level : 0));
+    expect(levels(['Teil 1', 'Part Two', 'Partie 1', 'Acte 2', 'Parte III', 'Libro primero', 'Частина друга', 'Книга 1'])).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
+    expect(
+      levels(['Kapitel 3: Heimkehr', 'CHAPTER ONE', 'Chapitre premier\u00a0: L’arrivée', 'Capítulo 3', 'Capitulo 4', 'Capitolo dodici', 'Розділ 2: Назва', 'Глава 5']),
+    ).toEqual([2, 2, 2, 2, 2, 2, 2, 2]);
+    expect(levels(['Prolog', 'Prologue', 'Prólogo', 'Пролог', 'Épilogue', 'Epilogo', 'Епілог', 'Vorwort', 'Avant-propos', 'Післямова'])).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+    // ganze Sätze bleiben Prosa
+    expect(levels(['Parte de la noche fue tranquila.', 'Chapitre premier de la saga', 'Розділ був довгим і нудним.'])).toEqual([0, 0, 0]);
+  });
+
+  it('Re-Import eines französischen Exports: Chapitre/Scène sind Kapitel und Szenen', async () => {
+    const md = '# Chapitre 1\n\n## Scène 1\n\nTexte.\n\n## Scène 2\n\nSuite.\n\n# Chapitre 2\u00a0: La fin\n\n## Scène 1\n\nFin.\n';
+    const data = Buffer.from(md).toString('base64');
+    expect(await api<ImportPreview>('POST', '/api/import/analyze', { filename: 'roman.md', data })).toMatchObject({ acts: 1, chapters: 2, scenes: 3 });
+    const r = await api<ImportResult>('POST', '/api/import', { filename: 'roman.md', data });
+    const o = await api<Outline>('GET', `/api/novels/${r.novelId}/outline`);
+    expect(o.acts[0].chapters.map((c) => c.title)).toEqual(['', 'La fin']);
+    expect(o.acts[0].chapters[0].scenes.map((s) => s.title)).toEqual(['', '']);
   });
 
   it('Text-Datei: Teil/Kapitel-Zeilen, Windows-1252', async () => {
